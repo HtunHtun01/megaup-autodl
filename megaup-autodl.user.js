@@ -1,113 +1,116 @@
 // ==UserScript==
-// @name         MegaUp.net Direct Link Grabber
-// @version      1.3
-// @description  MegaUp မှ direct download link ကိုသာ မျက်နှာပြင်ပေါ်တွင် ထုတ်ပြပေးသည် (Auto-download မဆွဲပါ)
-// @author       Elxss (Modified)
+// @name         MegaUp Real Direct Link Extractor
+// @version      2.0
+// @description  MegaUp direct token link (megadl.boats/...) ကို ဖမ်းယူပြီး UI ပေါ်တွင် ထုတ်ပြပေးသည်
 // @match        *://*.megaup.net/*
 // @grant        none
-// @run-at       document-idle
+// @run-at       document-start
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    console.log("[LINK-GRABBER] Loaded!");
+    // ကြော်ငြာ Popup များ ပိတ်ခြင်း
+    window.open = function() {
+        console.log("[BLOCKED] Ad popup blocked!");
+        return null;
+    };
 
-    // မျက်နှာပြင်ပေါ်တွင် Link ပြသရန် UI အကွက် ဖန်တီးခြင်း
-    const displayBox = document.createElement('div');
-    displayBox.id = 'megaup-direct-box';
-    displayBox.style.position = 'fixed';
-    displayBox.style.top = '15px';
-    displayBox.style.left = '50%';
-    displayBox.style.transform = 'translateX(-50%)';
-    displayBox.style.width = '90%';
-    displayBox.style.maxWidth = '500px';
-    displayBox.style.padding = '12px 16px';
-    displayBox.style.backgroundColor = '#0f172a';
-    displayBox.style.border = '2px solid #0284c7';
-    displayBox.style.borderRadius = '12px';
-    displayBox.style.zIndex = '9999999';
-    displayBox.style.boxShadow = '0 8px 24px rgba(0,0,0,0.5)';
-    displayBox.style.textAlign = 'center';
-    displayBox.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-    displayBox.innerHTML = '<span style="font-size: 13px; color: #38bdf8;">Timer စောင့်ဆိုင်းနေပါသည်...</span>';
+    // UI Box ပြုလုပ်ခြင်း
+    function setupUI() {
+        if (document.getElementById('direct-token-box')) return;
 
-    document.body.appendChild(displayBox);
+        const box = document.createElement('div');
+        box.id = 'direct-token-box';
+        box.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 5%;
+            width: 90%;
+            padding: 12px;
+            background-color: #0b132b;
+            border: 2px solid #00b4d8;
+            border-radius: 10px;
+            z-index: 2147483647;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.8);
+            text-align: center;
+            font-family: sans-serif;
+            color: #fff;
+        `;
+        box.innerHTML = '<span style="font-size: 13px; color: #90e0ef;">Timer စောင့်ဆိုင်းနေပါသည်...</span>';
+        document.body.appendChild(box);
+    }
 
-    // Direct Link ရရှိပါက UI ပေါ်တွင် ပြသပေးမည့် Function
-    function showDirectLink(link) {
-        displayBox.innerHTML = `
-            <div style="font-size: 13px; color: #4ade80; font-weight: bold; margin-bottom: 8px;">Direct Link ရရှိပါပြီ!</div>
-            <input id="directUrlInput" type="text" value="${link}" readonly 
-                   style="width: 100%; padding: 8px; font-size: 11px; background: #020617; color: #38bdf8; border: 1px solid #334155; border-radius: 6px; box-sizing: border-box; margin-bottom: 10px;">
+    // Direct Token Link ပေါ်လာပါက UI ပေါ်တွင် ထည့်သွင်းပြသခြင်း
+    function displayLink(realLink) {
+        const box = document.getElementById('direct-token-box');
+        if (!box) return;
+
+        box.innerHTML = `
+            <div style="font-size: 13px; color: #4ade80; font-weight: bold; margin-bottom: 6px;">Direct Token Link ရရှိပါပြီ!</div>
+            <textarea id="realDirectUrl" readonly rows="3"
+                style="width: 100%; padding: 6px; font-size: 11px; background: #000814; color: #48cae4; border: 1px solid #1c2541; border-radius: 6px; box-sizing: border-box; word-break: break-all; margin-bottom: 8px;">${realLink}</textarea>
             <div style="display: flex; gap: 8px; justify-content: center;">
-                <button id="copyDirectBtn" style="background: #0284c7; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
-                    Copy Link
+                <button id="copyRealBtn" style="background: #0077b6; color: #fff; border: none; padding: 7px 16px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
+                    Copy Direct Link
                 </button>
             </div>
         `;
 
-        document.getElementById('copyDirectBtn').addEventListener('click', function() {
-            const input = document.getElementById('directUrlInput');
-            input.select();
-            input.setSelectionRange(0, 99999);
-            navigator.clipboard.writeText(input.value);
+        document.getElementById('copyRealBtn').addEventListener('click', function() {
+            const textarea = document.getElementById('realDirectUrl');
+            textarea.select();
+            textarea.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(textarea.value);
             this.innerText = 'Copied!';
-            this.style.background = '#16a34a';
+            this.style.background = '#2b9348';
         });
     }
 
-    let Confirmed = false;
+    // Network Request / Fetch များကို Intercept လုပ်၍ download link ဖမ်းယူခြင်း
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const response = await originalFetch.apply(this, args);
+        try {
+            const clone = response.clone();
+            const text = await clone.text();
+            // megadl.boats သို့မဟုတ် download_token ပါသော url ကို ရှာဖွေခြင်း
+            const match = text.match(/https?:\/\/[a-zA-Z0-9.-]*megadl\.[a-z0-9.]+\/download\/[^"'<>\s]+/i);
+            if (match) {
+                displayLink(match[0].replace(/\\/g, ''));
+            }
+        } catch (e) {}
+        return response;
+    };
 
-    // Stage 1 စစ်ဆေးခြင်း (Download-timer div နှင့် a.btn)
-    const checkButtonGenerateLink = setInterval(() => {
-        let TimerDiv = document.querySelector("div[class='download-timer']");
+    window.addEventListener('DOMContentLoaded', setupUI);
 
-        if (TimerDiv) {
-            if (Confirmed === false) {
-                Confirmed = true;
-                clearInterval(checkButtonDownload);
+    // Countdown ပြီးဆုံးပါက ခလုတ်ကို simulate click လုပ်ပြီး Link ထုတ်ယူခြင်း
+    const interval = setInterval(() => {
+        const btn = document.querySelector('a#btn-download, a.btn-download, button#btndownload');
+        if (btn) {
+            const href = btn.getAttribute('href');
+            
+            // Link ပေါ်နေပါက
+            if (href && href.includes('megadl.') && href.includes('download_token')) {
+                clearInterval(interval);
+                displayLink(href);
+                return;
             }
 
-            let AExist = TimerDiv.querySelector("a[class='btn btn--primary']");
-            if (AExist) {
-                let waiting_stage1_check = setInterval(() => {
-                    let href = AExist.getAttribute("href");
-                    if (href && href !== "#") {
-                        clearInterval(waiting_stage1_check);
-                        clearInterval(checkButtonGenerateLink);
-
-                        console.log("[LINK-GRABBER] Direct Link Found:", href);
-                        // Auto-download မခေါ်ဘဲ Link ကိုသာ ထုတ်ပြခြင်း
-                        showDirectLink(href);
-                    }
-                }, 500);
-            }
-        }
-    }, 1000);
-
-    // Stage 2 စစ်ဆေးခြင်း (btndownload ခလုတ် သို့မဟုတ် direct link ရှိပါက)
-    const checkButtonDownload = setInterval(() => {
-        let DownloadDiv = document.querySelector("div[id='download']");
-
-        if (DownloadDiv) {
-            if (Confirmed === false) {
-                Confirmed = true;
-                clearInterval(checkButtonGenerateLink);
-            }
-
-            let btn = DownloadDiv.querySelector("button[id='btndownload'], a#btn-download");
-            if (btn && !btn.classList.contains("disable") && !btn.classList.contains("disabled")) {
-                clearInterval(checkButtonDownload);
-
-                let directHref = btn.getAttribute("href") || btn.dataset.url || btn.closest("form")?.action;
-                if (directHref && directHref !== "#") {
-                    showDirectLink(directHref);
-                } else {
-                    displayBox.innerHTML = '<span style="font-size: 13px; color: #fbbf24;">ခလုတ် အဆင်သင့်ဖြစ်ပါပြီ (Direct Link ကို Page မှ extract လုပ်၍ မရသေးပါ)</span>';
+            // Countdown timer ပြီးသွား၍ ခလုတ်နှိပ်ရန် အဆင်သင့်ဖြစ်ပါက
+            if (!btn.classList.contains('disabled') && !btn.classList.contains('disable')) {
+                clearInterval(interval);
+                
+                // Form submit ဖြစ်ပါက action url စစ်ဆေးခြင်း
+                const form = btn.closest('form');
+                if (form && form.action && form.action.includes('megadl.')) {
+                    displayLink(form.action);
+                } else if (href && href.startsWith('http')) {
+                    displayLink(href);
                 }
             }
         }
-    }, 1000);
+    }, 500);
 
 })();
